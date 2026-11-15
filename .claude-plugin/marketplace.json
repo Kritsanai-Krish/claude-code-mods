@@ -8,17 +8,22 @@
     {
       "name": "thai-backspace",
       "source": "./thai-backspace",
-      "description": "Backspace deletes one Thai vowel/tone mark at a time"
+      "description": "Backspace deletes one Thai or Lao vowel/tone mark at a time"
     },
     {
       "name": "usage-corner",
       "source": "./usage-corner",
-      "description": "Model, context, plan limits and cost in the prompt footer, with a popup panel"
+      "description": "Model, effort, context, plan limits and cost in the prompt footer, updated live, with a popup panel"
     },
     {
       "name": "image-preview",
       "source": "./image-preview",
-      "description": "Shows pictures in the transcript: images you attach and images Claude reads"
+      "description": "Shows pictures in the transcript: images you attach and images any tool returns"
+    },
+    {
+      "name": "keep-awake",
+      "source": "./keep-awake",
+      "description": "Keeps the screen on and the computer awake while Claude Code is open"
     }
   ]
 }
