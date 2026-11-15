@@ -1,0 +1,19 @@
+{
+  "name": "krish-mods",
+  "owner": {
+    "name": "Krish",
+    "url": "https://github.com/Kritsanai-Krish"
+  },
+  "plugins": [
+    {
+      "name": "thai-backspace",
+      "source": "./thai-backspace",
+      "description": "Backspace deletes one Thai vowel/tone mark at a time"
+    },
+    {
+      "name": "usage-corner",
+      "source": "./usage-corner",
+      "description": "Model, context, plan limits and cost in the prompt footer, with a popup panel"
+    }
+  ]
+}

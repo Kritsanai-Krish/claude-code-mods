@@ -1,0 +1,20 @@
+{
+  "name": "usage-corner",
+  "version": "0.1.0",
+  "description": "Shows model, context window, 5h/weekly limits (and Fable's own limit when on Fable) and session cost at the bottom right of the prompt",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Krish",
+    "url": "https://github.com/Kritsanai-Krish"
+  },
+  "homepage": "https://github.com/Kritsanai-Krish/claude-code-mods/tree/main/usage-corner",
+  "repository": "https://github.com/Kritsanai-Krish/claude-code-mods",
+  "license": "MIT",
+  "keywords": [
+    "usage",
+    "limits",
+    "statusline",
+    "cost",
+    "context"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "thai-backspace",
+  "version": "0.1.0",
+  "description": "Backspace in the prompt box deletes one Thai vowel/tone mark at a time instead of the whole consonant cluster",
+  "author": {
+    "name": "Krish",
+    "url": "https://github.com/Kritsanai-Krish"
+  },
+  "homepage": "https://github.com/Kritsanai-Krish/claude-code-mods/tree/main/thai-backspace",
+  "repository": "https://github.com/Kritsanai-Krish/claude-code-mods",
+  "license": "MIT",
+  "keywords": [
+    "thai",
+    "input",
+    "backspace"
+  ]
+}
