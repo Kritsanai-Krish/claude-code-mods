@@ -2,15 +2,15 @@
 
 # 🧩 Claude Code Mods by Krish
 
-**Two small mods that make the Claude Code terminal nicer to live in.**<br>
-มอดเล็ก ๆ สองตัวที่ทำให้ Claude Code ในเทอร์มินัลใช้สบายขึ้น
+**Small mods that make the Claude Code terminal nicer to live in.**<br>
+มอดเล็ก ๆ ที่ทำให้ Claude Code ในเทอร์มินัลใช้สบายขึ้น
 
 ![Claude Code](https://img.shields.io/badge/Claude_Code-2.1.325+-d97757?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-4c9a6a?style=flat-square)
-![Mods](https://img.shields.io/badge/mods-2-6c7bd8?style=flat-square)
+![Mods](https://img.shields.io/badge/mods-3-6c7bd8?style=flat-square)
 ![ภาษาไทย](https://img.shields.io/badge/ภาษาไทย-supported-e0a43a?style=flat-square)
 
-[**thai-backspace**](#-thai-backspace) · [**usage-corner**](#-usage-corner) · [Install](#-install) · [Development](#-development)
+[**thai-backspace**](#-thai-backspace) · [**usage-corner**](#-usage-corner) · [**image-preview**](#-image-preview) · [Install](#-install) · [Development](#-development)
 
 </div>
 
@@ -23,6 +23,7 @@ At the prompt of a Claude Code terminal session (answer `y` to add the marketpla
 ```text
 /plugin install usage-corner --marketplace Kritsanai-Krish/claude-code-mods
 /plugin install thai-backspace --marketplace Kritsanai-Krish/claude-code-mods
+/plugin install image-preview --marketplace Kritsanai-Krish/claude-code-mods
 ```
 
 From a shell instead:
@@ -30,11 +31,12 @@ From a shell instead:
 ```bash
 claude plugin install usage-corner --marketplace Kritsanai-Krish/claude-code-mods
 claude plugin install thai-backspace --marketplace Kritsanai-Krish/claude-code-mods
+claude plugin install image-preview --marketplace Kritsanai-Krish/claude-code-mods
 ```
 
 In the desktop app (where `/plugin` does not run): click **+** next to the prompt box → **Plugins** → **Add marketplace** with `Kritsanai-Krish/claude-code-mods` → **Add plugin**.
 
-Each mod is independent: install one or both.
+Each mod is independent: install any of them.
 
 ---
 
@@ -112,6 +114,32 @@ Per-model weekly windows are not in the data Claude Code hands to mods. They com
 
 ---
 
+## 🖼 image-preview
+
+> **See the picture, not just `[Image #1]`.** · ดูรูปในแชทได้เลย ทั้งรูปที่เราแนบและรูปที่ Claude เปิดอ่าน
+
+Claude Code sends images to the model but shows you only a placeholder. This mod draws them in the transcript:
+
+| What | Where it appears |
+| --- | --- |
+| An image you paste, drag in, or drop as a file path | Under your message |
+| An image Claude opens with **Read** | Under the `Read(...)` row, or under the folded `Read 2 files` line |
+
+- You see the same picture Claude sees (Claude Code's own resized copy).
+- Previews keep their shape and fit the window: at most 72 columns × 20 rows, and small icons stay small.
+- Other surfaces (desktop app, VS Code) are left alone; they have their own previews.
+
+### Requirements
+
+- **A terminal with the kitty graphics protocol**: Ghostty, kitty, or iTerm2 3.5+. Elsewhere you get a dim `[image 640x480]` line instead.
+- **ImageMagick** (`magick`) for JPEG, GIF and WebP, and for pasted images. Small PNGs from Read need nothing. Fedora: `sudo dnf install ImageMagick` · Debian/Ubuntu: `sudo apt install imagemagick` · macOS: `brew install imagemagick`.
+
+### Where previews are kept
+
+Converted PNGs go to `~/.cache/claude-image-preview/` (folder mode 700) and are deleted after 7 days. Clearing the folder is always safe.
+
+---
+
 ## 🛠 Development
 
 ```bash
@@ -121,6 +149,7 @@ cd claude-code-mods
 claude plugin validate .                # manifests + hooks modules
 claude plugin test ./usage-corner       # 16 tests
 claude plugin test ./thai-backspace     # 5 tests
+claude plugin test ./image-preview      # 10 tests
 
 claude --plugin-dir ./usage-corner      # run a session with your working copy
 ```
@@ -130,6 +159,9 @@ claude-code-mods/
 ├── .claude-plugin/marketplace.json
 ├── thai-backspace/
 │   └── hooks/            register.ts · thai-marks.ts (+ tests)
+├── image-preview/
+│   ├── hooks/            register.tsx · convert.ts · image-size.ts · state.ts (+ tests)
+│   └── types/index.d.ts  state contract
 └── usage-corner/
     ├── hooks/            register.tsx · format.ts · panel.tsx · panel-format.ts
     │                     state.ts · plan-usage.ts · alerts.ts (+ tests)

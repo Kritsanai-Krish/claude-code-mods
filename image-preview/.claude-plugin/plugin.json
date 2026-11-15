@@ -1,0 +1,14 @@
+{
+  "name": "image-preview",
+  "version": "0.1.0",
+  "description": "Shows images in the transcript: pictures you attach to a prompt and images Claude opens with Read",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Krish",
+    "url": "https://github.com/Kritsanai-Krish"
+  },
+  "homepage": "https://github.com/Kritsanai-Krish/claude-code-mods/tree/main/image-preview",
+  "repository": "https://github.com/Kritsanai-Krish/claude-code-mods",
+  "license": "MIT",
+  "keywords": ["image", "preview", "kitty", "ghostty", "terminal"]
+}
