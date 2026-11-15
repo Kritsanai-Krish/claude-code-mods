@@ -1,7 +1,7 @@
 {
   "name": "usage-corner",
-  "version": "0.1.1",
-  "description": "Shows model, context window, 5h/weekly limits (and Fable's own limit when on Fable) and session cost at the bottom right of the prompt",
+  "version": "1.0.0",
+  "description": "Model, effort, context window, 5h/weekly limits and session cost at the bottom right of the prompt, updated live, with a panel for details",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Krish",
@@ -16,5 +16,42 @@
     "statusline",
     "cost",
     "context"
-  ]
+  ],
+  "userConfig": {
+    "icons": {
+      "type": "string",
+      "title": "Icons",
+      "description": "nerd uses Nerd Font icons (needs a Nerd Font in the terminal); unicode uses plain symbols every font has.",
+      "default": "nerd",
+      "options": [
+        "nerd",
+        "unicode"
+      ]
+    },
+    "alerts": {
+      "type": "boolean",
+      "title": "Limit and context warnings",
+      "description": "Show a toast when a plan limit reaches 80% or 95%, when it resets after a warning, and when the context is 80% or 90% full.",
+      "default": true
+    },
+    "showCost": {
+      "type": "boolean",
+      "title": "Show session cost",
+      "description": "Show what the session has cost in USD at the end of the corner.",
+      "default": true
+    },
+    "usageRefresh": {
+      "type": "string",
+      "title": "Background limit check",
+      "description": "How often an idle session re-reads /usage, so it sees what your other sessions spent. off checks only when something happens in this session.",
+      "default": "3 min",
+      "options": [
+        "off",
+        "1 min",
+        "3 min",
+        "5 min",
+        "10 min"
+      ]
+    }
+  }
 }

@@ -1,33 +1,59 @@
 import { expect, test } from 'claude-code/testing'
-import { decideAlerts, formatAlert, newThresholdReached } from './alerts'
+import { decideAlerts, decideContextAlert } from './alerts'
+import type { WatchedWindow } from './alerts'
 
-test('a threshold warns once, then the next one', async () => {
-  expect(newThresholdReached(50, 0)).toBeUndefined()
-  expect(newThresholdReached(82, 0)).toBe(80)
-  expect(newThresholdReached(85, 80)).toBeUndefined()
-  expect(newThresholdReached(96, 80)).toBe(95)
-  expect(newThresholdReached(97, 0)).toBe(95)
-  expect(newThresholdReached(99, 95)).toBeUndefined()
+const RESET = Date.parse('2026-11-15T15:50:00Z')
+const NOW = Date.parse('2026-11-15T12:00:00Z')
+
+function fiveHour(percentUsed: number, resetsAtMilliseconds: number | undefined = RESET): WatchedWindow {
+  return { kind: 'five_hour', title: '5-hour limit', percentUsed, resetsAtMilliseconds, resetText: 'in 1h20m', hasReset: false }
+}
+
+test('warns once at 80% and once at 95%, not again in between', async () => {
+  const first = decideAlerts({}, [fiveHour(82)], NOW)
+  expect(first.messages).toEqual(['⚠ 5-hour limit at 82% · resets in 1h20m'])
+  const second = decideAlerts(first.memory, [fiveHour(88)], NOW)
+  expect(second.messages).toEqual([])
+  const third = decideAlerts(second.memory, [fiveHour(96)], NOW)
+  expect(third.messages).toEqual(['⚠ 5-hour limit at 96% · resets in 1h20m'])
+  expect(decideAlerts(third.memory, [fiveHour(99)], NOW).messages).toEqual([])
 })
 
-test('alert text', async () => {
-  expect(formatAlert({ windowKey: 'k', title: '5-hour limit', percentUsed: 82.4, resetText: 'in 1h20m' }))
-    .toBe('⚠ 5-hour limit at 82% · resets in 1h20m')
+test('a reset time that jitters by a few minutes is still the same period', async () => {
+  const first = decideAlerts({}, [fiveHour(82)], NOW)
+  expect(decideAlerts(first.memory, [fiveHour(83, RESET + 5 * 60_000)], NOW).messages).toEqual([])
 })
 
-test('warns once per window and period, and forgets reset periods', async () => {
-  const weekly = { windowKey: 'seven_day@A', title: 'Weekly limit', percentUsed: 81, resetText: '' }
-  let state = decideAlerts({}, [weekly])
-  expect(state.messages).toEqual(['⚠ Weekly limit at 81%'])
+test('a new period says the limit has reset, then warns afresh', async () => {
+  const first = decideAlerts({}, [fiveHour(96)], NOW)
+  const nextPeriod = decideAlerts(first.memory, [fiveHour(3, RESET + 5 * 60 * 60_000)], NOW)
+  expect(nextPeriod.messages).toEqual(['✓ 5-hour limit has reset'])
+  const again = decideAlerts(nextPeriod.memory, [fiveHour(81, RESET + 5 * 60 * 60_000)], NOW)
+  expect(again.messages).toEqual(['⚠ 5-hour limit at 81% · resets in 1h20m'])
+})
 
-  state = decideAlerts(state.memory, [{ ...weekly, percentUsed: 85 }])
-  expect(state.messages).toEqual([])
+test('a window that was never warned about resets silently', async () => {
+  const first = decideAlerts({}, [fiveHour(40)], NOW)
+  expect(decideAlerts(first.memory, [fiveHour(2, RESET + 5 * 60 * 60_000)], NOW).messages).toEqual([])
+})
 
-  state = decideAlerts(state.memory, [{ ...weekly, percentUsed: 96 }])
-  expect(state.messages).toEqual(['⚠ Weekly limit at 96%'])
+test('a window missing from one reading keeps its memory, so it does not warn twice', async () => {
+  const first = decideAlerts({}, [fiveHour(82)], NOW)
+  const withoutIt = decideAlerts(first.memory, [], NOW)
+  expect(decideAlerts(withoutIt.memory, [fiveHour(84)], NOW).messages).toEqual([])
+})
 
-  // The window reset: a new key warns again, and the old key is dropped.
-  state = decideAlerts(state.memory, [{ ...weekly, windowKey: 'seven_day@B', percentUsed: 82 }])
-  expect(state.messages).toEqual(['⚠ Weekly limit at 82%'])
-  expect(Object.keys(state.memory)).toEqual(['seven_day@B'])
+test('memory of a period that ended long ago is dropped', async () => {
+  const first = decideAlerts({}, [fiveHour(82)], NOW)
+  const muchLater = RESET + 9 * 24 * 60 * 60_000
+  expect(decideAlerts(first.memory, [], muchLater).memory).toEqual({})
+})
+
+test('context: warns once per threshold on the way up, and re-arms after it drops', async () => {
+  expect(decideContextAlert(0, 79)).toEqual({ level: 0, message: undefined })
+  expect(decideContextAlert(0, 81)).toEqual({ level: 80, message: '⚠ Context 81% full · /compact to shrink it, /clear to start fresh' })
+  expect(decideContextAlert(80, 85)).toEqual({ level: 80, message: undefined })
+  expect(decideContextAlert(80, 93).level).toBe(90)
+  expect(decideContextAlert(90, 30)).toEqual({ level: 0, message: undefined })
+  expect(decideContextAlert(90, undefined)).toEqual({ level: 0, message: undefined })
 })

@@ -1,10 +1,12 @@
-import type { ModelWindow, PlanUsage } from '../types'
+import type { ContributorBlock, PlanUsage, PlanWindow } from '../types'
+import { parseResetText } from './reset-time'
 
 /**
- * Per-model weekly windows (Fable's) are not in the rate-limit headers a mod
- * can read; only the claude.ai usage endpoint has them. `claude -p /usage`
- * prints that endpoint's answer without calling a model (no tokens, ~1.5 s),
- * so the mod runs it and reads the text.
+ * The rate-limit headers a mod can read cover 5h and weekly only, and only as
+ * of this session's last reply. The claude.ai usage endpoint has every window
+ * (a model's own weekly one too) as of now, whatever session spent it.
+ * `claude -p /usage` prints that endpoint's answer without calling a model
+ * (no tokens, about a second), so the mod runs it and reads the text.
  */
 export const USAGE_COMMAND_ARGUMENTS: readonly string[] = [
   '-p', '/usage',
@@ -15,47 +17,82 @@ export const USAGE_COMMAND_ARGUMENTS: readonly string[] = [
   '--setting-sources', '',
 ]
 
-const MODEL_WINDOW_LINE = /^Current week \(([^)]+)\): (\d+(?:\.\d+)?)% used(?: · resets (.+))?$/
+// `Current session: 22% used · resets Nov 15, 10:50pm (Asia/Bangkok)`
+// `Current week (Fable): 49% used · resets Nov 17, 10pm (Asia/Bangkok)`
+const WINDOW_LINE = /^Current (session|week)(?: \(([^)]+)\))?: (\d+(?:\.\d+)?)% used(?: · resets (.+))?$/
+const TIME_ZONE_SUFFIX = /\s*\(([^)]*)\)\s*$/
+// `Last 24h · 782 requests · 25 sessions`, `Last 7d · …`
+const CONTRIBUTORS_HEADER = /^Last \d+\s*[a-z]+\b/i
 const ALL_MODELS_NAME = 'all models'
-const CONTRIBUTORS_HEADER = /^Last 24h\b/
-const TIME_ZONE_SUFFIX = /\s*\([^)]*\)\s*$/
 
-/** Pulls the per-model weekly windows out of `/usage` text: `Current week (Fable): 49% used · resets …`. */
-export function parseModelWindows(usageText: string): ModelWindow[] {
-  const windows: ModelWindow[] = []
+export const FIVE_HOUR_KIND = 'five_hour'
+export const WEEK_KIND = 'seven_day'
+/** A model's own weekly window is `seven_day_<family>` (e.g. `seven_day_fable`). */
+export const MODEL_WINDOW_KIND_PREFIX = 'seven_day_'
+
+/** Names the window a `/usage` line is about, the way the rate-limit headers name theirs. */
+function kindForWindow(scope: string, name: string | undefined): string {
+  if (scope === 'session') {
+    return FIVE_HOUR_KIND
+  }
+  if (name === undefined || name.toLowerCase() === ALL_MODELS_NAME) {
+    return WEEK_KIND
+  }
+  return `${MODEL_WINDOW_KIND_PREFIX}${name.toLowerCase().replace(/\s+/g, '_')}`
+}
+
+/** Reads one `Current …: N% used · resets …` line, or undefined for any other line. */
+function parseWindowLine(line: string, nowMilliseconds: number): PlanWindow | undefined {
+  const match = WINDOW_LINE.exec(line)
+  if (match === null) {
+    return undefined
+  }
+  const [, scope = '', name, percentText, resetPart = ''] = match
+  const timeZone = TIME_ZONE_SUFFIX.exec(resetPart)?.[1]
+  const resetText = resetPart.replace(TIME_ZONE_SUFFIX, '')
+  const window: PlanWindow = {
+    kind: kindForWindow(scope, name),
+    name: name ?? scope,
+    percentUsed: Number(percentText),
+    resetText,
+  }
+  const resetsAtMilliseconds = parseResetText(resetText, timeZone, nowMilliseconds)
+  if (resetsAtMilliseconds !== undefined) {
+    window.resetsAtMilliseconds = resetsAtMilliseconds
+  }
+  return window
+}
+
+/** Pulls every limit window out of `/usage` text. */
+export function parseWindows(usageText: string, nowMilliseconds: number): PlanWindow[] {
+  const windows: PlanWindow[] = []
   for (const line of usageText.split('\n')) {
-    const match = MODEL_WINDOW_LINE.exec(line.trim())
-    if (match === null) {
-      continue
+    const window = parseWindowLine(line.trim(), nowMilliseconds)
+    if (window !== undefined) {
+      windows.push(window)
     }
-    const name = match[1] ?? ''
-    if (name.toLowerCase() === ALL_MODELS_NAME) {
-      continue
-    }
-    windows.push({
-      name,
-      percentUsed: Number(match[2]),
-      resetText: (match[3] ?? '').replace(TIME_ZONE_SUFFIX, ''),
-    })
   }
   return windows
 }
 
-/** Pulls the "Last 24h" block of `/usage` (what used the limits, with tips), one entry per line. */
-export function parseContributors(usageText: string): string[] {
-  const lines = usageText.split('\n')
-  const headerIndex = lines.findIndex(line => CONTRIBUTORS_HEADER.test(line.trim()))
-  if (headerIndex === -1) {
-    return []
-  }
-  const block: string[] = []
-  for (const line of lines.slice(headerIndex)) {
-    if (line.trim() === '') {
-      break
+/** Pulls the "Last 24h" / "Last 7d" blocks of `/usage`: a header line, then what used the limits. */
+export function parseContributorBlocks(usageText: string): ContributorBlock[] {
+  const blocks: ContributorBlock[] = []
+  let openBlock: ContributorBlock | undefined
+  for (const rawLine of usageText.split('\n')) {
+    const line = rawLine.trim()
+    if (line === '') {
+      openBlock = undefined
+      continue
     }
-    block.push(line.trim())
+    if (CONTRIBUTORS_HEADER.test(line)) {
+      openBlock = { title: line, lines: [] }
+      blocks.push(openBlock)
+      continue
+    }
+    openBlock?.lines.push(line)
   }
-  return block
+  return blocks
 }
 
 /** Reads the `result` text out of `claude -p --output-format json` output. */
@@ -74,14 +111,17 @@ export function readResultText(stdout: string): string {
 /** Builds the stored reading from `/usage` text. */
 export function parsePlanUsage(usageText: string, fetchedAt: number): PlanUsage {
   return {
-    modelWindows: parseModelWindows(usageText),
-    contributors: parseContributors(usageText),
+    windows: parseWindows(usageText, fetchedAt),
+    contributorBlocks: parseContributorBlocks(usageText),
     fetchedAt,
   }
 }
 
-/** Returns the window that belongs to the model in use (`Fable` while on claude-fable-…), if any. */
-export function windowForModel(windows: readonly ModelWindow[], modelId: string): ModelWindow | undefined {
-  const lowerModelId = modelId.toLowerCase()
-  return windows.find(window => lowerModelId.includes(`claude-${window.name.toLowerCase()}`))
+/** Checks that a value read back from the store is a reading this version wrote. */
+export function isPlanUsage(value: unknown): value is PlanUsage {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const candidate = value as Partial<PlanUsage>
+  return Array.isArray(candidate.windows) && Array.isArray(candidate.contributorBlocks) && typeof candidate.fetchedAt === 'number'
 }

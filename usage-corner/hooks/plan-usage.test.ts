@@ -1,46 +1,52 @@
 import { expect, test } from 'claude-code/testing'
-import { parsePlanUsage, readResultText, windowForModel } from './plan-usage'
+import { parsePlanUsage, readResultText } from './plan-usage'
 
-// Sample `claude -p /usage` output (Claude Code 2.1.325).
+const NOW = Date.parse('2026-11-15T12:00:00Z')
+
 const USAGE_TEXT = `You are currently using your subscription to power your Claude Code usage
 
-Current session: 7% used · resets Nov 15, 10:49pm (UTC)
-Current week (all models): 50% used · resets Nov 17, 9:59pm (UTC)
-Current week (Fable): 49% used · resets Nov 17, 9:59pm (UTC)
+Current session: 22% used · resets Nov 15, 10:50pm (Asia/Bangkok)
+Current week (all models): 52% used · resets Nov 17, 10pm (Asia/Bangkok)
+Current week (Fable): 49.5% used · resets Nov 17, 10pm (Asia/Bangkok)
 
 What's contributing to your usage?
 Approximate · sessions on this machine only · shares overlap
 
-Last 24h · 529 requests · 15 sessions
-  67%  Start fresh when you switch tasks · run /clear
-  29%  Turn off MCP servers you don't use · 18k tokens per request
-  Top skills: /update-config 2%, /plugin-authoring 1%
+Last 24h · 782 requests · 25 sessions
+  68%  Start fresh when you switch tasks · run /clear
+  30%  Turn off MCP servers you don't use · 18k tokens per request
 
-Last 7d · 642 requests · 23 sessions
-  65%  Start fresh when you switch tasks · run /clear`
+Last 7d · 912 requests · 35 sessions
+  65%  Start fresh when you switch tasks · run /clear
+`
 
-test('reads the Fable weekly window and skips the all-models one', async () => {
-  const reading = parsePlanUsage(USAGE_TEXT, 5)
-  expect(reading.modelWindows).toEqual([{ name: 'Fable', percentUsed: 49, resetText: 'Nov 17, 9:59pm' }])
-  expect(reading.fetchedAt).toBe(5)
+test('every window of /usage is read, with its kind and reset time', async () => {
+  const usage = parsePlanUsage(USAGE_TEXT, NOW)
+  expect(usage.windows).toEqual([
+    { kind: 'five_hour', name: 'session', percentUsed: 22, resetText: 'Nov 15, 10:50pm', resetsAtMilliseconds: Date.parse('2026-11-15T15:50:00Z') },
+    { kind: 'seven_day', name: 'all models', percentUsed: 52, resetText: 'Nov 17, 10pm', resetsAtMilliseconds: Date.parse('2026-11-17T15:00:00Z') },
+    { kind: 'seven_day_fable', name: 'Fable', percentUsed: 49.5, resetText: 'Nov 17, 10pm', resetsAtMilliseconds: Date.parse('2026-11-17T15:00:00Z') },
+  ])
+  expect(usage.fetchedAt).toBe(NOW)
 })
 
-test('reads the last-24h block', async () => {
-  expect(parsePlanUsage(USAGE_TEXT, 0).contributors).toEqual([
-    'Last 24h · 529 requests · 15 sessions',
-    "67%  Start fresh when you switch tasks · run /clear",
-    "29%  Turn off MCP servers you don't use · 18k tokens per request",
-    'Top skills: /update-config 2%, /plugin-authoring 1%',
+test('both "what used your limits" blocks are kept, each under its header', async () => {
+  const usage = parsePlanUsage(USAGE_TEXT, NOW)
+  expect(usage.contributorBlocks).toEqual([
+    { title: 'Last 24h · 782 requests · 25 sessions', lines: ['68%  Start fresh when you switch tasks · run /clear', "30%  Turn off MCP servers you don't use · 18k tokens per request"] },
+    { title: 'Last 7d · 912 requests · 35 sessions', lines: ['65%  Start fresh when you switch tasks · run /clear'] },
   ])
 })
 
-test('matches the window to the model in use', async () => {
-  const windows = parsePlanUsage(USAGE_TEXT, 0).modelWindows
-  expect(windowForModel(windows, 'claude-fable-5-2[1m]')?.percentUsed).toBe(49)
-  expect(windowForModel(windows, 'claude-opus-5-5')).toBeUndefined()
+test('a window without a reset, and text with no windows, are both fine', async () => {
+  const usage = parsePlanUsage('Current week (Opus): 3% used\n', NOW)
+  expect(usage.windows).toEqual([{ kind: 'seven_day_opus', name: 'Opus', percentUsed: 3, resetText: '' }])
+  expect(parsePlanUsage('You are using an API key.', NOW)).toEqual({ windows: [], contributorBlocks: [], fetchedAt: NOW })
 })
 
 test('reads the result out of the JSON envelope, and rejects junk', async () => {
-  expect(readResultText(JSON.stringify({ type: 'result', result: 'hi' }))).toBe('hi')
-  expect(() => readResultText('{"type":"result"}')).toThrow()
+  expect(readResultText('{"result":"hello"}')).toBe('hello')
+  expect(() => readResultText('{"other":1}')).toThrow()
+  expect(() => readResultText('{"result":5}')).toThrow()
+  expect(() => readResultText('not json')).toThrow()
 })
