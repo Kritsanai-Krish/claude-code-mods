@@ -169,6 +169,18 @@ export const register: Register = on => {
     return result
   })
 
+  // `/clear` starts a new session id with empty session state and raises no
+  // `session.start`; the classic SessionStart (source `clear`) is the only
+  // signal, so refill the corner there or it stays blank until the next reply.
+  on('classic.SessionStart', async ($, e, next) => {
+    const result = await next(e)
+    if (e.source === 'clear') {
+      await refreshSnapshotSafely($)
+      runInBackground($, 'read /usage', refreshPlanUsageAndAlert($, false))
+    }
+    return result
+  })
+
   on('session.measure', async ($, e, next) => {
     await refreshSnapshotSafely($)
     if (e.changed.includes('rateLimits')) {
