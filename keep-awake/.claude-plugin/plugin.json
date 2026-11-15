@@ -1,0 +1,19 @@
+{
+  "name": "keep-awake",
+  "version": "0.1.0",
+  "description": "Keeps the screen on and the computer awake while Claude Code is open, on Linux, macOS, Windows, WSL and BSD",
+  "author": {
+    "name": "Krish",
+    "url": "https://github.com/Kritsanai-Krish"
+  },
+  "homepage": "https://github.com/Kritsanai-Krish/claude-code-mods/tree/main/keep-awake",
+  "repository": "https://github.com/Kritsanai-Krish/claude-code-mods",
+  "license": "MIT",
+  "keywords": [
+    "caffeine",
+    "screen",
+    "sleep",
+    "idle",
+    "inhibit"
+  ]
+}
