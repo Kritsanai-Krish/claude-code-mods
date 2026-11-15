@@ -48,6 +48,8 @@ Claude Code's prompt box treats a Thai consonant and the marks stacked on it as 
 
 With this mod, Backspace peels marks off one by one:
 
+![thai-backspace in Ghostty: each Backspace removes one mark](docs/screenshots/thai-backspace.png)
+
 | You type | Backspace ① | Backspace ② | Backspace ③ |
 | :---: | :---: | :---: | :---: |
 | `กี่` | `กี` | `ก` | *(empty)* |
@@ -69,6 +71,8 @@ With this mod, Backspace peels marks off one by one:
 󰚩 Opus 5.5  │  󰧑 ▰▱▱▱▱ 16% 158k/1M  │  󰔟 5h ▰▱▱▱▱ 7% ↻3h58m  │  󰨳 wk ▰▰▰▱▱ 50% ↻2d3h  │  󰇁5.54
 ```
 
+![usage-corner in the prompt footer](docs/screenshots/usage-corner-footer.png)
+
 ### What the corner shows
 
 | Part | Meaning |
@@ -85,6 +89,8 @@ Meters turn **green → yellow → red** at 50% and 80%. On a narrow terminal th
 ### Click for details
 
 Every part of the corner is a button. Clicking one opens a panel docked beside the chat. It never covers your work, and **Esc**, **✕** or a second click closes it.
+
+![The usage panel opened from the corner](docs/screenshots/usage-corner-panel.png)
 
 | Tab | Key | What you get |
 | --- | :---: | --- |
@@ -120,6 +126,8 @@ Per-model weekly windows are not in the data Claude Code hands to mods. They com
 
 Claude Code sends images to the model but shows you only a placeholder. This mod draws them in the transcript:
 
+![Claude reads two images and both appear under the Read line](docs/screenshots/image-preview-read.png)
+
 | What | Where it appears |
 | --- | --- |
 | An image you paste, drag in, or drop as a file path | Under your message |
@@ -128,6 +136,10 @@ Claude Code sends images to the model but shows you only a placeholder. This mod
 - You see the same picture Claude sees (Claude Code's own resized copy).
 - Previews keep their shape and fit the window: at most 72 columns × 20 rows, and small icons stay small.
 - Other surfaces (desktop app, VS Code) are left alone; they have their own previews.
+
+A pasted image appears right under your message:
+
+![A pasted image shown under the prompt](docs/screenshots/image-preview-paste.png)
 
 ### Requirements
 
@@ -159,6 +171,7 @@ claude-code-mods/
 ├── .claude-plugin/marketplace.json
 ├── thai-backspace/
 │   └── hooks/            register.ts · thai-marks.ts (+ tests)
+├── docs/screenshots/    README images (real Ghostty screenshots)
 ├── image-preview/
 │   ├── hooks/            register.tsx · convert.ts · image-size.ts · state.ts (+ tests)
 │   └── types/index.d.ts  state contract

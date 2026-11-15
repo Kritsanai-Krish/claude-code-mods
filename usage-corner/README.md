@@ -6,6 +6,8 @@ Model, context window, 5-hour / weekly limits (plus Fable's own weekly limit whi
 󰚩 Opus 5.5  │  󰧑 ▰▱▱▱▱ 16% 158k/1M  │  󰔟 5h ▰▱▱▱▱ 7% ↻3h58m  │  󰨳 wk ▰▰▰▱▱ 50% ↻2d3h  │  󰇁5.54
 ```
 
+![usage-corner](../docs/screenshots/usage-corner-footer.png)
+
 ```text
 /plugin install usage-corner --marketplace Kritsanai-Krish/claude-code-mods
 ```
