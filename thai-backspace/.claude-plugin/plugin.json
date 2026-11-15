@@ -1,7 +1,7 @@
 {
   "name": "thai-backspace",
-  "version": "0.1.0",
-  "description": "Backspace in the prompt box deletes one Thai vowel/tone mark at a time instead of the whole consonant cluster",
+  "version": "0.2.0",
+  "description": "Backspace in the prompt box deletes one Thai or Lao vowel/tone mark at a time instead of the whole consonant cluster",
   "author": {
     "name": "Krish",
     "url": "https://github.com/Kritsanai-Krish"
@@ -11,6 +11,7 @@
   "license": "MIT",
   "keywords": [
     "thai",
+    "lao",
     "input",
     "backspace"
   ]
