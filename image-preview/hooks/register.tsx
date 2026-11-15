@@ -1,185 +1,217 @@
-import type {
-  EngineInterface, ImageSource, PromptSubmitAttachment, Register, RenderInput,
-} from 'claude-code'
-import type { PreviewImage } from '../types'
-import { convertToPng, removeOldPreviews, toSafeFileName } from './convert'
+import type { EngineInterface, ImageSource, Register, RenderInput, SessionAppendInput } from 'claude-code'
+import type { Picture, PreviewEntry } from '../types'
+import { findPromptImages, findToolResultImages, messageKeyOf } from './blocks'
+import type { FoundImage } from './blocks'
 import {
-  MAX_PREVIEW_ROWS, decodedByteCount, fitImageToCells, previewColumnLimit,
-} from './image-size'
-import { findPromptPreview, rememberPromptPreview } from './state'
+  isPreviewImage, loadImageSource, openInViewer, removeOldPreviews, savePreview, toSafeFileName,
+} from './convert'
+import { GALLERY_GAP_CELLS, layoutGallery, previewColumnLimit } from './image-size'
+import type { CellBox } from './image-size'
+import { readSettings } from './options'
+import type { Settings } from './options'
+import { findPreview, findPromptPreviewByText, rememberPreview } from './state'
 
 // Previews sit under the row's `⎿` gutter.
 const PREVIEW_INDENT = 5
-// The Image element takes base64 PNG bytes up to 2 MiB; bigger goes via a file.
-const MAX_INLINE_PNG_BYTES = 2 * 1024 * 1024
-const PNG_MEDIA_TYPE = 'image/png'
+// A prompt with pictures shows a `[Image #1]` marker for each in its text.
+const IMAGE_MARKER = '[Image #'
 
 /** A Read result that holds a picture (the engine's own resized copy). */
-type ReadImageOutput = {
-  type: 'image'
-  file: {
-    base64: string
-    type: string
-    dimensions?: { displayWidth?: number; displayHeight?: number }
-  }
-}
-
-type AttachedImage = { mediaType: string; base64: string }
-type Preview = { source: ImageSource; widthPixels: number; heightPixels: number }
-type PreviewOutcome = Preview | { error: string }
-
-// Converted Read images by tool_use_id. A module variable is enough: a reload
-// clears it and the next draw converts again from the stored result.
-const readPreviews = new Map<string, Promise<PreviewOutcome>>()
+type ReadImageOutput = { type: 'image'; file: { base64: string; type: string } }
 
 function isReadImageOutput(output: unknown): output is ReadImageOutput {
   const candidate = output as ReadImageOutput | undefined
-  return candidate?.type === 'image' && typeof candidate.file?.base64 === 'string'
+  return candidate?.type === 'image' && typeof candidate.file?.base64 === 'string' && typeof candidate.file.type === 'string'
 }
 
-function previewFromFile(image: PreviewImage): Preview {
-  return {
-    source: { file: image.pngPath, format: 'png' },
-    widthPixels: image.widthPixels,
-    heightPixels: image.heightPixels,
-  }
+function promptKey(messageKey: string): string {
+  return `prompt:${messageKey}`
 }
 
-/** Builds what the terminal draws for a Read image, converting it when it is not a small PNG. */
-async function buildReadPreview(
+function toolKey(toolUseId: string): string {
+  return `tool:${toolUseId}`
+}
+
+/** Runs work nobody waits for: a hook must return at once, and a failure is logged, not lost. */
+function runInBackground($: EngineInterface, what: string, work: Promise<void>): void {
+  work.catch((error: unknown) => {
+    $.ui.log(`image-preview: could not ${what}: ${String(error)}`)
+  })
+}
+
+/** Prepares every picture of one row and remembers them under the row's key. */
+async function storePictures(
   $: EngineInterface,
-  toolUseId: string,
-  output: ReadImageOutput,
-): Promise<PreviewOutcome> {
-  const { base64, type, dimensions } = output.file
-  const width = dimensions?.displayWidth
-  const height = dimensions?.displayHeight
-  const isSmallPng = type === PNG_MEDIA_TYPE && decodedByteCount(base64) <= MAX_INLINE_PNG_BYTES
-  if (isSmallPng && width !== undefined && height !== undefined) {
-    return { source: { png: base64 }, widthPixels: width, heightPixels: height }
-  }
-  const converted = await convertToPng($, type, base64, `read-${toSafeFileName(toolUseId)}`)
-  if ('error' in converted) {
-    return converted
-  }
-  return previewFromFile(converted)
-}
-
-function getReadPreview($: EngineInterface, toolUseId: string, output: ReadImageOutput): Promise<PreviewOutcome> {
-  let preview = readPreviews.get(toolUseId)
-  if (preview === undefined) {
-    preview = buildReadPreview($, toolUseId, output).catch(error => ({ error: String(error) }))
-    readPreviews.set(toolUseId, preview)
-  }
-  return preview
-}
-
-/** Draws one picture (or why it cannot be shown) sized to the transcript. */
-function drawPreview(
-  e: RenderInput<'ToolUse' | 'ToolGroup' | 'UserMessage', 'terminal'>,
-  $: EngineInterface,
-  outcome: PreviewOutcome,
   key: string,
+  images: readonly FoundImage[],
+  promptText?: string,
+): Promise<void> {
+  const fileName = toSafeFileName(key)
+  const pictures = await Promise.all(images.map((image, index) => savePreview($, image, `${fileName}-${index}`)))
+  const entry: PreviewEntry = { key, pictures }
+  if (promptText !== undefined) {
+    entry.promptText = promptText
+  }
+  await rememberPreview($, entry)
+}
+
+/** Returns the text of a row's first text block: what the transcript shows for a prompt. */
+function firstText(content: unknown): string | undefined {
+  if (!Array.isArray(content)) {
+    return undefined
+  }
+  for (const block of content) {
+    const candidate = block as { type?: unknown; text?: unknown } | null
+    if (candidate?.type === 'text' && typeof candidate.text === 'string') {
+      return candidate.text
+    }
+  }
+  return undefined
+}
+
+/** A prompt was stored: keep the pictures attached to it. */
+function capturePromptPictures($: EngineInterface, e: SessionAppendInput): void {
+  const messageKey = messageKeyOf(e.uuid)
+  const images = findPromptImages(e.message.content)
+  // A subagent's rows are not drawn in this transcript.
+  if (e.agentId !== undefined || messageKey === undefined || images.length === 0) {
+    return
+  }
+  const work = storePictures($, promptKey(messageKey), images, firstText(e.message.content))
+  runInBackground($, 'prepare the pictures of a prompt', work)
+}
+
+/** Tool results were stored: keep the pictures any tool returned (Read, a screenshot tool, an MCP server). */
+function captureToolPictures($: EngineInterface, e: SessionAppendInput): void {
+  if (e.agentId !== undefined) {
+    return
+  }
+  for (const result of findToolResultImages(e.message.content)) {
+    const work = storePictures($, toolKey(result.toolUseId), result.images)
+    runInBackground($, 'prepare the pictures of a tool result', work)
+  }
+}
+
+/**
+ * Returns the pictures of a tool call's row. During a session they were kept
+ * when the result was stored; in a resumed one only Read's stored result
+ * still holds its picture, so that is prepared here.
+ */
+async function findToolPictures($: EngineInterface, toolUseId: string, tool: string, output: unknown): Promise<Picture[]> {
+  const entry = await findPreview($, toolKey(toolUseId))
+  if (entry !== undefined) {
+    return entry.pictures
+  }
+  if (tool !== 'Read' || !isReadImageOutput(output)) {
+    return []
+  }
+  const image: FoundImage = { mediaType: output.file.type, base64: output.file.base64 }
+  return [await savePreview($, image, `${toSafeFileName(toolKey(toolUseId))}-0`)]
+}
+
+/** Returns the pictures of a prompt's row: by the row's id, or by its text while the id is a placeholder. */
+async function findPromptPictures($: EngineInterface, requestId: string | undefined, text: string): Promise<Picture[]> {
+  const messageKey = messageKeyOf(requestId)
+  if (messageKey !== undefined) {
+    const entry = await findPreview($, promptKey(messageKey))
+    if (entry !== undefined) {
+      return entry.pictures
+    }
+  }
+  if (!text.includes(IMAGE_MARKER)) {
+    return []
+  }
+  return (await findPromptPreviewByText($, text))?.pictures ?? []
+}
+
+type Row = RenderInput<'ToolUse' | 'ToolGroup' | 'UserMessage', 'terminal'>
+type ReadyPicture = { source: ImageSource; pngPath: string; widthPixels: number; heightPixels: number }
+
+/** Draws a row's pictures under it: one large, or several as rows of thumbnails; failures as a dim line each. */
+async function drawPictures(
+  $: EngineInterface,
+  e: Row,
+  pictures: readonly Picture[],
+  keyPrefix: string,
+  settings: Settings,
 ) {
-  const { Box, Image, Text } = $.ui.resolve(e)
-  if ('error' in outcome) {
+  const { Box, Button, Image, Text } = $.ui.resolve(e)
+  const ready: ReadyPicture[] = []
+  const errors: string[] = []
+  for (const picture of pictures) {
+    if (isPreviewImage(picture)) {
+      ready.push({ ...picture, source: await loadImageSource($, picture) })
+    } else {
+      errors.push(picture.error)
+    }
+  }
+  const availableColumns = previewColumnLimit(e.viewport?.columns, PREVIEW_INDENT, Number.MAX_SAFE_INTEGER)
+  const boxRows = layoutGallery(ready, availableColumns, settings.limits)
+
+  const drawOne = (picture: ReadyPicture, box: CellBox, index: number) => {
+    const size = `${picture.widthPixels}×${picture.heightPixels}`
     return (
-      <Box paddingLeft={PREVIEW_INDENT}>
-        <Text dimColor>[image preview: {outcome.error}]</Text>
+      <Box flexDirection="column">
+        <Image key={`${keyPrefix}-${index}`} source={picture.source} columns={box.columns} rows={box.rows} alt={`[image ${size}]`} />
+        {settings.areCaptionsShown && (
+          <Button
+            key={`open-${keyPrefix}-${index}`}
+            plain
+            onPress={() => runInBackground($, 'open the picture', openInViewer($, picture.pngPath))}
+          >
+            <Text dimColor>{`${size} · open`}</Text>
+          </Button>
+        )}
       </Box>
     )
   }
-  const maxColumns = previewColumnLimit(e.viewport?.columns, PREVIEW_INDENT)
-  const box = fitImageToCells(outcome.widthPixels, outcome.heightPixels, maxColumns, MAX_PREVIEW_ROWS)
+
+  let pictureIndex = 0
+  const galleryRows = boxRows.map(boxes => (
+    <Box flexDirection="row" gap={GALLERY_GAP_CELLS}>
+      {boxes.map(box => {
+        const index = pictureIndex
+        pictureIndex += 1
+        const picture = ready[index]
+        return picture === undefined ? null : drawOne(picture, box, index)
+      })}
+    </Box>
+  ))
   return (
-    <Box paddingLeft={PREVIEW_INDENT}>
-      <Image
-        key={key}
-        source={outcome.source}
-        columns={box.columns}
-        rows={box.rows}
-        alt={`[image ${outcome.widthPixels}x${outcome.heightPixels}]`}
-      />
+    <Box flexDirection="column" paddingLeft={PREVIEW_INDENT}>
+      {galleryRows}
+      {errors.map(error => <Text dimColor>{`[image preview: ${error}]`}</Text>)}
     </Box>
   )
 }
 
-/** Reads every slice of one attached item, joining the base64 pieces. */
-async function readAttachment($: EngineInterface, id: string): Promise<AttachedImage | undefined> {
-  let media = await $.prompt.media({ id })
-  if ('unreadable' in media && media.unreadable !== undefined) {
-    return undefined
-  }
-  if ('deny' in media && media.deny !== undefined) {
-    return undefined
-  }
-  const pieces = [media.base64]
-  while (media.next !== undefined) {
-    media = await $.prompt.media({ id, offset: media.next })
-    if (media.base64 === undefined) {
-      return undefined
-    }
-    pieces.push(media.base64)
-  }
-  return { mediaType: media.mediaType, base64: pieces.join('') }
-}
+/**
+ * Shows pictures in the transcript: the ones attached to a prompt under the
+ * prompt, and the ones a tool returned (Read, screenshots, MCP tools) under
+ * the tool's row. Terminal only: other surfaces draw pictures themselves.
+ */
+export const register: Register = (on, options) => {
+  const settings = readSettings(options)
 
-/** Copies the bytes of every image attached to the prompt being submitted. */
-async function copyAttachedImages(
-  $: EngineInterface,
-  items: readonly PromptSubmitAttachment[],
-): Promise<AttachedImage[]> {
-  const copies: AttachedImage[] = []
-  for (const item of items) {
-    if (item.type !== 'image' || item.id === undefined) {
-      continue
-    }
-    const copy = await readAttachment($, item.id)
-    if (copy !== undefined) {
-      copies.push(copy)
-    }
-  }
-  return copies
-}
-
-/** Converts a prompt's images to PNG files and remembers them under its text. */
-async function storePromptPreviews(
-  $: EngineInterface,
-  promptText: string,
-  attachments: AttachedImage[],
-): Promise<void> {
-  const batchName = `prompt-${Date.now()}`
-  const images: PreviewImage[] = []
-  for (const [index, attachment] of attachments.entries()) {
-    const converted = await convertToPng($, attachment.mediaType, attachment.base64, `${batchName}-${index}`)
-    if ('error' in converted) {
-      $.ui.toast(`image-preview: ${converted.error}`)
-      continue
-    }
-    images.push(converted)
-  }
-  if (images.length > 0) {
-    await rememberPromptPreview($, { promptText, images })
-  }
-}
-
-export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    void removeOldPreviews($, Date.now()).catch(() => undefined)
+    runInBackground($, 'clean the preview cache', removeOldPreviews($, await $.clock.now()))
     return next(e)
   })
 
-  // Attached pictures are readable only while their prompt is being
-  // submitted, so copy them now and convert after the prompt has gone on.
-  on('prompt.submit', async ($, e, next) => {
-    const attachments = await copyAttachedImages($, e.attachments ?? []).catch(() => [])
-    const result = await next(e)
-    if (attachments.length > 0) {
-      void storePromptPreviews($, e.text, attachments).catch(error =>
-        $.ui.toast(`image-preview: ${String(error)}`),
-      )
-    }
-    return result
+  // Every row a conversation keeps passes here once. The pictures are copied
+  // out as the row goes by; the row itself is passed on untouched.
+  on('session.append', { door: 'prompt' }, async ($, e, next) => {
+    capturePromptPictures($, e)
+    return next(e)
+  })
+  // A prompt sent while Claude is working is folded into the running turn.
+  on('session.append', { door: 'delivery' }, async ($, e, next) => {
+    capturePromptPictures($, e)
+    return next(e)
+  })
+  on('session.append', { door: 'tool-result' }, async ($, e, next) => {
+    captureToolPictures($, e)
+    return next(e)
   })
 
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
@@ -188,17 +220,15 @@ export const register: Register = on => {
     if (e.surface !== 'terminal') {
       return row
     }
-    const preview = await findPromptPreview($, e.props.text)
-    if (preview === undefined) {
+    const pictures = await findPromptPictures($, e.requestId, e.props.text)
+    if (pictures.length === 0) {
       return row
     }
     const { Box } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         {row}
-        {preview.images.map((image, index) =>
-          drawPreview(e, $, previewFromFile(image), `prompt-${index}`),
-        )}
+        {await drawPictures($, e, pictures, 'prompt', settings)}
       </Box>
     )
   })
@@ -208,33 +238,31 @@ export const register: Register = on => {
     if (e.surface !== 'terminal') {
       return row
     }
-    if (e.props.tool !== 'Read' || !isReadImageOutput(e.props.output)) {
+    const pictures = await findToolPictures($, e.props.tool_use_id, e.props.tool, e.props.output)
+    if (pictures.length === 0) {
       return row
     }
-    const outcome = await getReadPreview($, e.props.tool_use_id, e.props.output)
     const { Box } = $.ui.resolve(e)
     return (
       <Box flexDirection="column">
         {row}
-        {drawPreview(e, $, outcome, 'read')}
+        {await drawPictures($, e, pictures, 'tool', settings)}
       </Box>
     )
   })
 
-  // Several reads in a row fold into one "Read 2 files" line; the calls then
-  // draw no ToolUse rows of their own, so the group shows their pictures.
+  // Several calls in a row fold into one line ("Read 2 files"); the calls then
+  // draw no rows of their own, so the group shows their pictures.
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const row = await next(e)
     if (e.surface !== 'terminal' || e.props.isExpanded) {
       return row
     }
-    const pictures = []
+    const pictures: Picture[] = []
     for (const call of e.props.calls) {
-      if (call.tool !== 'Read' || call.tool_use_id === undefined || !isReadImageOutput(call.output)) {
-        continue
+      if (call.tool_use_id !== undefined) {
+        pictures.push(...(await findToolPictures($, call.tool_use_id, call.tool, call.output)))
       }
-      const outcome = await getReadPreview($, call.tool_use_id, call.output)
-      pictures.push(drawPreview(e, $, outcome, `read-${call.tool_use_id}`))
     }
     if (pictures.length === 0) {
       return row
@@ -243,7 +271,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {row}
-        {pictures}
+        {await drawPictures($, e, pictures, 'group', settings)}
       </Box>
     )
   })

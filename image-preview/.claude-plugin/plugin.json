@@ -1,7 +1,7 @@
 {
   "name": "image-preview",
-  "version": "0.1.0",
-  "description": "Shows images in the transcript: pictures you attach to a prompt and images Claude opens with Read",
+  "version": "1.0.0",
+  "description": "Shows pictures in the transcript: the ones you attach to a prompt and the ones any tool returns (Read, screenshots, MCP tools)",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Krish",
@@ -10,5 +10,30 @@
   "homepage": "https://github.com/Kritsanai-Krish/claude-code-mods/tree/main/image-preview",
   "repository": "https://github.com/Kritsanai-Krish/claude-code-mods",
   "license": "MIT",
-  "keywords": ["image", "preview", "kitty", "ghostty", "terminal"]
+  "keywords": [
+    "image",
+    "preview",
+    "kitty",
+    "ghostty",
+    "terminal"
+  ],
+  "userConfig": {
+    "size": {
+      "type": "string",
+      "title": "Picture size",
+      "description": "How large a picture is drawn in the transcript. Several pictures on one row are drawn as smaller thumbnails side by side.",
+      "default": "medium",
+      "options": [
+        "small",
+        "medium",
+        "large"
+      ]
+    },
+    "captions": {
+      "type": "boolean",
+      "title": "Captions",
+      "description": "Show each picture's size in pixels and an open button under it.",
+      "default": true
+    }
+  }
 }
