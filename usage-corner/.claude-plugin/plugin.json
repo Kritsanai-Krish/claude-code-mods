@@ -1,6 +1,6 @@
 {
   "name": "usage-corner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shows model, context window, 5h/weekly limits (and Fable's own limit when on Fable) and session cost at the bottom right of the prompt",
   "types": "./types/index.d.ts",
   "author": {
